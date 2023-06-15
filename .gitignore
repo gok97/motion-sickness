@@ -1,0 +1,6 @@
+.vscode/
+.venvs/
+
+bags/
+csv/
+plots/
