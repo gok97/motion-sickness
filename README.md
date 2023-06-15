@@ -15,6 +15,9 @@ Install requirements
 pip install requirements.txt
 ```
 
+#### Setup
+Save ros2 bag files in the bags directory.
+
 #### Running the code
 ```
 python3 process_bags.py
