@@ -12,6 +12,16 @@ from scipy.signal import butter, sosfilt, sosfreqz
 from rosbags.rosbag2 import Reader
 from rosbags.serde import deserialize_cdr
 
+import folium
+
+def plot_gnss(gnss_data, filename):
+    initial_location = [42.300710, -83.698257]
+    map_center = folium.Map(location=initial_location, zoom_start=18)
+    for loc in gnss_data:
+        _, latitude, longitude, _ = loc
+        folium.CircleMarker(location=[latitude, longitude], radius=1, fill=True).add_to(map_center)
+    map_center.save(f'plots/{filename}.html')
+
 
 def plot_imu_acceleration(imu_data, filename):
     imu_data = np.array(imu_data)
@@ -152,6 +162,8 @@ def deserialize_ros_messages_from_bag(bag_file_path, query_topic, filename):
             writer.writerow(['t', 'linear_vel_x', 'linear_vel_y', 'linear_vel_z', 'angular_vel_x', 'angular_vel_y', 'angular_vel_z'])
         elif query_topic == ODOM_TOPIC:
             writer.writerow(['t', 'linear_vel_x', 'linear_vel_y', 'linear_vel_z', 'angular_vel_x', 'angular_vel_y', 'angular_vel_z'])
+        elif query_topic == GNSS_TOPIC:
+            writer.writerow(['t', 'latitude', 'longitude', 'altitude'])
 
         dbw_enabled = True # set this to False when you want start data entry to csv after DBW is enabled
         vehicle_moving = False
@@ -207,7 +219,8 @@ def deserialize_ros_messages_from_bag(bag_file_path, query_topic, filename):
                     msg = deserialize_cdr(rawdata, connection.msgtype)
                     dbw_enabled = msg.data
 
-                if connection.topic == ODOM_TOPIC and connection.topic == query_topic:
+                if connection.topic == ODOM_TOPIC and connection.topic == query_topic\
+                    and start_data_entry:
                     msg = deserialize_cdr(rawdata, connection.msgtype)
                     linear_vel_x = msg.twist.twist.linear.x
                     linear_vel_y = msg.twist.twist.linear.y
@@ -231,7 +244,16 @@ def deserialize_ros_messages_from_bag(bag_file_path, query_topic, filename):
                         data.append([t, linear_vel_x, linear_vel_y,
                                      linear_vel_z, angular_vel_x, angular_vel_y,
                                      angular_vel_z])
-                    
+                        
+                if connection.topic == GNSS_TOPIC and connection.topic == query_topic:
+                    msg = deserialize_cdr(rawdata, connection.msgtype)
+                    lat = msg.latitude
+                    lon = msg.longitude
+                    alt = msg.altitude
+                    t = (timestamp - initial_timestamp) / 1e9
+                    writer.writerow([t, lat, lon, alt])
+                    data.append([t, lat, lon, alt])
+
     csv_file.close()
     
     return data
@@ -296,18 +318,20 @@ def read_bags():
             imu_raw_filename = f"imu_raw_{bag_file}"
             gps_vel_filename = f"gps_vel_{bag_file}"
             odom_vel_filename = f"odom_vel_{bag_file}"
+            gnss_filename = f"gnss_{bag_file}"
             
             print(f"Parsing {bag_file_path}\n")
             imu_data = deserialize_ros_messages_from_bag(bag_file_path, IMU_TOPIC, imu_raw_filename)
             gps_vel_data = deserialize_ros_messages_from_bag(bag_file_path, GPS_VEL_TOPIC, gps_vel_filename)
             odom_data = deserialize_ros_messages_from_bag(bag_file_path, ODOM_TOPIC, odom_vel_filename)
+            gnss_data = deserialize_ros_messages_from_bag(bag_file_path, GNSS_TOPIC, gnss_filename)
 
             all_imu_data.append(imu_data)
 
             plot_imu_acceleration(np.array(imu_data), imu_raw_filename)
             plot_gps_vel(np.array(gps_vel_data), gps_vel_filename)
             plot_odom_vel(np.array(odom_data), odom_vel_filename)
-
+            plot_gnss(np.array(gnss_data), gnss_filename)
 
     plot_imu_accleration_combined(all_imu_data, file_names)
 
@@ -317,6 +341,7 @@ if __name__ == "__main__":
     GPS_VEL_TOPIC = "/vehicle/gps/vel"
     DBW_TOPIC = "/vehicle/dbw_enabled"
     ODOM_TOPIC = "/vehicle/odom"
+    GNSS_TOPIC = "/ins_fix"
 
     TIME_TRIM = {
                 "new_straightaway_1": 10.0,
