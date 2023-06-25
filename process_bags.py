@@ -7,7 +7,7 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 
-from scipy.signal import butter, sosfilt, sosfreqz
+from scipy.signal import butter, sosfilt, sosfreqz, savgol_filter
 
 from rosbags.rosbag2 import Reader
 from rosbags.serde import deserialize_cdr
@@ -109,17 +109,19 @@ def plot_odom_vel(odom_data, filename):
     return vel_x, vel_y, vel_z
 
 
-def plot_imu_accleration_combined(imu_data_combined, file_names):
-    num_of_data = len(imu_data_combined)
+def plot_imu_accleration_combined(all_imu_data, all_trim_time, file_names):
+    num_of_data = len(all_imu_data)
     
     for acc_idx, acc_type in enumerate(["accleration_x", "accleration_y", "accleration_z"]):
+        # plot each acc x, y and z in different graphs
         fig, ax = plt.subplots(nrows=1, ncols=1)
         for idx in range(num_of_data):
-            imu_data = np.array(imu_data_combined[idx])
+            imu_data = np.array(all_imu_data[idx])
             time = imu_data[:, 0]
 
-            start_data_point = np.where(time >= TIME_TRIM[file_names[idx]]-2)[0][0]
-            acc = imu_data[start_data_point:, acc_idx+1]
+            start_data_index = np.where(time<=all_trim_time[idx])[0][-1]
+            # start_data_point = np.where(time >= TIME_TRIM[file_names[idx]]-2)[0][0]
+            acc = imu_data[start_data_index:, acc_idx+1]
 
             ax.plot(acc, label=file_names[idx])
             ax.set_title(acc_type)
@@ -134,7 +136,8 @@ def plot_imu_accleration_combined(imu_data_combined, file_names):
         fig.legend(loc='outside upper right')
         fig.suptitle('IMU Accleration over Time')
         plt.grid(True, linewidth=2)
-        plt.minorticks_on()    
+        # plt.xlim([1500, 2500])
+        plt.minorticks_on()
         plot_file_path = f"./plots/imu_{acc_type}_combined.png"
         fig.savefig(plot_file_path)
         # plt.show()
@@ -259,7 +262,16 @@ def phaseless_lowpass_filter(data, cutoff_freq, sampling_freq, order, plot_freq_
     sos = butter(order, normal_cutoff, btype='low', output='sos')
 
     # Apply filter using sosfilt to get phaseless output
-    filtered_data = sosfilt(sos, data)
+    filtered_data = sosfilt(sos, data[:, 1])
+
+    dx = np.diff(data[:, 1]) / np.diff(data[:, 0])
+    dt = (data[:, 0][:-1] + data[:, 0][1:]) / 2
+    
+    if not plot_freq_response:
+        plt.plot(data[:, 0], data[:, 1])
+        plt.plot(data[:, 0], filtered_data)
+        plt.plot(dt, dx)
+        plt.show()
 
     if plot_freq_response:
         # Frequency response of the filter
@@ -282,34 +294,96 @@ def phaseless_lowpass_filter(data, cutoff_freq, sampling_freq, order, plot_freq_
     return filtered_data
 
 
-def read_bags():
+def plot_savgol_filter(data, window_length, polyorder, deriv, delta):
+    filtered_data = savgol_filter(x=data[:, 1],
+                                  window_length=window_length,
+                                  polyorder=polyorder,
+                                  deriv=deriv,
+                                  delta=delta)
+    filtered_data_first_order = savgol_filter(x=data[:, 1],
+                                             window_length=window_length,
+                                             polyorder=polyorder,
+                                             deriv=deriv+1,
+                                             delta=delta)
+    filtered_data_second_order = savgol_filter(x=data[:, 1],
+                                               window_length=window_length,
+                                               polyorder=polyorder,
+                                               deriv=deriv+2,
+                                               delta=delta)
+
+    plt.plot(data[:, 0], data[:, 1])
+    plt.plot(data[:, 0], filtered_data)
+    plt.plot(data[:, 0], filtered_data_first_order)
+    plt.plot(data[:, 0], filtered_data_second_order)
+    plt.show()
+
+
+def get_trim_time(odom_data):
+    # set very low x velocities to 0 (noise)
+    vel_x = odom_data[:, 1]
+    vel_x[vel_x < 0.01] = 0
+
+    # find peak x velocity index
+    max_idx = np.argmax(vel_x)
+    
+    # find 0 velocity indices
+    zero_indices = np.where(vel_x==0)[0]
+    # find the largest 0 velocity index
+    # that is smaller than peak x velocity index
+    trim_index = zero_indices[zero_indices<max_idx][-1]
+    trim_time = odom_data[:, 0][trim_index]
+
+    return trim_time
+
+
+def read_and_plot_bags():
     if not os.path.exists("./csv"):
         os.mkdir("./csv")
 
-    bag_files = os.listdir("bags")
-    all_imu_data = []
-    file_names = []
+    bag_files = os.listdir("./bags/umtri_recorded_0623")
     for bag_file in bag_files:
-        if "new_straightaway" in bag_file:
-            file_names.append(bag_file)
-            bag_file_path = f"./bags/{bag_file}"
+        if bag_file in ["straight_trip11_3", "straight_trip11_4"]:
+            continue
+        bag_file_path = f"./bags/umtri_recorded_0623/{bag_file}"
+        imu_raw_filename = f"imu_raw_{bag_file}"
+        gps_vel_filename = f"gps_vel_{bag_file}"
+        odom_vel_filename = f"odom_vel_{bag_file}"
+        
+        print(f"Parsing {bag_file_path}\n")
+        imu_data = deserialize_ros_messages_from_bag(bag_file_path, IMU_TOPIC, imu_raw_filename)
+        gps_vel_data = deserialize_ros_messages_from_bag(bag_file_path, GPS_VEL_TOPIC, gps_vel_filename)
+        odom_data = deserialize_ros_messages_from_bag(bag_file_path, ODOM_TOPIC, odom_vel_filename)
+
+        # filtered_acc = phaseless_lowpass_filter(np.array(imu_data)[:, :2], 1, 100, 2, plot_freq_response=False)
+        # plot_savgol_filter(np.array(odom_data)[:, :2], 75, 2, 0, 1 / 100)
+        plot_gps_vel(np.array(gps_vel_data), gps_vel_filename)
+        plot_odom_vel(np.array(odom_data), odom_vel_filename)
+        plot_imu_acceleration(np.array(imu_data), imu_raw_filename)
+
+    # plot_imu_accleration_combined(all_imu_data, ["trip9_1", "trip10_1", "trip11_1", "trip12_1"])
+
+def read_and_plot_combined_bags(bags):
+    bag_files = os.listdir("./bags/umtri_recorded_0623")
+    all_trim_time = []
+    all_imu_data = []
+    bags_list = []
+    for bag_file in bag_files:
+        if bag_file in bags:
+            bag_file_path = f"./bags/umtri_recorded_0623/{bag_file}"
             imu_raw_filename = f"imu_raw_{bag_file}"
             gps_vel_filename = f"gps_vel_{bag_file}"
             odom_vel_filename = f"odom_vel_{bag_file}"
-            
+
             print(f"Parsing {bag_file_path}\n")
             imu_data = deserialize_ros_messages_from_bag(bag_file_path, IMU_TOPIC, imu_raw_filename)
-            gps_vel_data = deserialize_ros_messages_from_bag(bag_file_path, GPS_VEL_TOPIC, gps_vel_filename)
+            # gps_vel_data = deserialize_ros_messages_from_bag(bag_file_path, GPS_VEL_TOPIC, gps_vel_filename)
             odom_data = deserialize_ros_messages_from_bag(bag_file_path, ODOM_TOPIC, odom_vel_filename)
-
+            
+            all_trim_time.append(get_trim_time(odom_data=np.array(odom_data)))
             all_imu_data.append(imu_data)
-
-            plot_imu_acceleration(np.array(imu_data), imu_raw_filename)
-            plot_gps_vel(np.array(gps_vel_data), gps_vel_filename)
-            plot_odom_vel(np.array(odom_data), odom_vel_filename)
-
-
-    plot_imu_accleration_combined(all_imu_data, file_names)
+            bags_list.append(bag_file)
+    
+    plot_imu_accleration_combined(all_imu_data, all_trim_time, bags_list)
 
 
 if __name__ == "__main__":
@@ -319,14 +393,15 @@ if __name__ == "__main__":
     ODOM_TOPIC = "/vehicle/odom"
 
     TIME_TRIM = {
-                "new_straightaway_1": 10.0,
+                "new_straightaway_1": 9.7,
                 "new_straightaway_2": 7.0,
                 "new_straightaway_3": 6.5,
                 "new_straightaway_4": 5.0,
                 }
     # deserialize_ros_messages_from_bag("./bags/trip_straight_5", DBW_TOPIC, "dbw_trip_straight_5")
 
-    read_bags()
+    read_and_plot_combined_bags(["straight_trip10_1", "straight_trip11_1", "straight_trip12_1"])
+    # read_and_plot_bags()
 
 # find_lowpass_cutoff(acc)
 # filtered_acc = phaseless_lowpass_filter(acc, 1, 100, 2, plot_freq_response=True)
