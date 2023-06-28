@@ -375,6 +375,7 @@ def trim_csv(all_trim_time, bags_list):
                         continue
                     t = float(row[0])
                     if t >= all_trim_time[idx]:
+                        row[0] = str(t - all_trim_time[idx])
                         lines.append(row)
             
             with open(f.replace(".csv", "_trim.csv"), 'w') as write_file:
