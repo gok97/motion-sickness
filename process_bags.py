@@ -128,7 +128,6 @@ def plot_imu_accleration_combined(all_imu_data, all_trim_time, file_names):
         for idx in range(num_of_data):
             imu_data = np.array(all_imu_data[idx])
             time = imu_data[:, 0]
-            print(time)
             start_data_index = np.where(time<=all_trim_time[idx])[0][-1]
             # start_data_point = np.where(time >= TIME_TRIM[file_names[idx]]-2)[0][0]
             acc = imu_data[start_data_index:, acc_idx+1]
@@ -407,9 +406,7 @@ def read_and_plot_combined_bags(bags):
             all_imu_data.append(imu_data)
             bags_list.append(bag_file)
     
-            all_imu_data.append(imu_data)
-
-    # plot_imu_accleration_combined(all_imu_data, all_trim_time, bags_list)
+    plot_imu_accleration_combined(all_imu_data, all_trim_time, bags_list)
     # plot_imu_accleration_combined(all_imu_data, ["trip9_1", "trip10_1", "trip11_1", "trip12_1"])
 
 
