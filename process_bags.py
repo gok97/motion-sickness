@@ -128,11 +128,11 @@ def plot_imu_accleration_combined(all_imu_data, all_trim_time, file_names):
         for idx in range(num_of_data):
             imu_data = np.array(all_imu_data[idx])
             time = imu_data[:, 0]
-            start_data_index = np.where(time<=all_trim_time[idx])[0][-1]
+            start_data_index = np.where(time<=all_trim_time[idx]-2)[0][-1]
             # start_data_point = np.where(time >= TIME_TRIM[file_names[idx]]-2)[0][0]
             acc = imu_data[start_data_index:, acc_idx+1]
 
-            ax.plot(acc, label=file_names[idx])
+            ax.plot(acc, label=file_names[idx], linewidth=0.5)
             ax.set_title(acc_type)
 
         lines = []
@@ -357,6 +357,29 @@ def get_trim_time(odom_data):
     return trim_time
 
 
+def trim_csv(all_trim_time, bags_list):
+    for idx, file in enumerate(bags_list):
+        imu_raw_filename = f"./csv/imu_raw_{file}.csv"
+        gps_vel_filename = f"./csv/gps_vel_{file}.csv"
+        odom_vel_filename = f"./csv/odom_vel_{file}.csv"
+        files = [imu_raw_filename, gps_vel_filename, odom_vel_filename]
+        for f in files:
+            lines = []
+            with open(f, 'r') as csv_file:
+                reader = csv.reader(csv_file)
+                next(reader)
+                for row in reader:
+                    t = float(row[0])
+                    if t >= all_trim_time[idx]:
+                        lines.append(row)
+            
+            with open(f.replace(".csv", "_trim.csv"), 'w') as write_file:
+                writer = csv.writer(write_file)
+                writer.writerows(lines)
+
+            write_file.close()
+
+
 def read_and_plot_bags():
     if not os.path.exists("./csv"):
         os.mkdir("./csv")
@@ -401,12 +424,14 @@ def read_and_plot_combined_bags(bags):
             imu_data = deserialize_ros_messages_from_bag(bag_file_path, IMU_TOPIC, imu_raw_filename)
             gps_vel_data = deserialize_ros_messages_from_bag(bag_file_path, GPS_VEL_TOPIC, gps_vel_filename)
             odom_data = deserialize_ros_messages_from_bag(bag_file_path, ODOM_TOPIC, odom_vel_filename)
+            # filtered_imu_data = phaseless_lowpass_filter(np.array(imu_data)[:, :2], 1, 100, 2, plot_freq_response=False)
             
             all_trim_time.append(get_trim_time(odom_data=np.array(odom_data)))
             all_imu_data.append(imu_data)
             bags_list.append(bag_file)
     
     plot_imu_accleration_combined(all_imu_data, all_trim_time, bags_list)
+    trim_csv(all_trim_time, bags_list)
     # plot_imu_accleration_combined(all_imu_data, ["trip9_1", "trip10_1", "trip11_1", "trip12_1"])
 
 
