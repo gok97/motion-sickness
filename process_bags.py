@@ -367,8 +367,12 @@ def trim_csv(all_trim_time, bags_list):
             lines = []
             with open(f, 'r') as csv_file:
                 reader = csv.reader(csv_file)
-                next(reader)
+                header = None
                 for row in reader:
+                    if header is None:
+                        header = row
+                        lines.append(header)
+                        continue
                     t = float(row[0])
                     if t >= all_trim_time[idx]:
                         lines.append(row)
