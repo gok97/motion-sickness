@@ -4,3 +4,5 @@
 bags/*
 csv/
 plots/
+
+.DS_Store
