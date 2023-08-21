@@ -12,13 +12,25 @@ source ms_venv/bin/activate
 
 Install requirements
 ```
-pip install requirements.txt
+cd .. && pip install -r requirements.txt
 ```
 
 #### Setup
 Save ros2 bag files in the bags directory.
 
 #### Running the code
+Parse ros2 bags into csv files
 ```
 python3 process_bags.py
+```
+
+Straight way route - plot acceleration and jerk
+```
+python3 plot_acc.py
+python3 plot_jerk.py
+```
+
+Plot routes on MCity map
+```
+python3 plot_route.py
 ```

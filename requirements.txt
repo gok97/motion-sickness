@@ -17,4 +17,3 @@ scipy==1.10.1
 six==1.16.0
 zipp==3.15.0
 zstandard==0.21.0
-folium==0.14.0
