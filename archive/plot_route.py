@@ -3,7 +3,7 @@ import gmplot
 import csv
 import pandas as pd
 
-api_key = "AIzaSyAOB77k8V9pYbagUkbaYfBvCWD-Qd44gV8"
+api_key = ""
 
 def get_stop(filename):
     df = pd.read_csv(f"csv/imu_raw_{filename}.csv", header=0)
